@@ -1,0 +1,1 @@
+{"name":"atelier-share","private":true,"type":"module","scripts":{"test":"node --test tests/lib.test.mjs tests/cloud.test.mjs"}}
