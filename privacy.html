@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/; font-src 'self' https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/; img-src 'self' data:">
+<title>개인정보 처리방침 — Atelier 4·2 Share</title>
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="privacy.css">
+</head>
+<body>
+<header><a class="brand" href="https://atelier-4-2.github.io/">4·2</a> <a href="./">Share</a> <nav><a href="#ko">한국어</a> · <a href="#fr">Français</a></nav></header>
+<main>
+<section id="ko" lang="ko">
+<h1>Atelier 4·2 Share 개인정보 처리방침</h1>
+<p>시행일: 2026-11-23</p>
+<h2>1. 개요 및 운영 주체</h2>
+<p>Atelier 4·2 Share(이하 &quot;서비스&quot;)는 학생 개인이 비영리로 운영하는 도구 모음(Atelier 4·2)의 웹 기반 파일 공유 도구(<a href="https://atelier-4-2.github.io/share/">https://atelier-4-2.github.io/share/</a>)입니다. 본 서비스는 GitHub Pages 정적 웹사이트로 구동되며, 자체 서버나 데이터베이스를 운영하지 않습니다. 광고, 접속 분석 도구, 사용자 추적용 쿠키를 일절 사용하지 않습니다.</p>
+<h2>2. 처리하는 정보 및 보관 방식</h2>
+<p>서비스 이용 시 사용자의 브라우저 내에서 다음 정보만 일시적으로 처리됩니다.</p>
+<ul>
+<li><strong>Google 계정 정보</strong>: 계정 이름, 이메일 주소, Google Drive 저장용량 현황 (화면 표시 목적에 한함)</li>
+<li><strong>접근 토큰</strong>: Google OAuth 2.0 접근 토큰 (브라우저 탭의 <code>sessionStorage</code>에만 보관되며, 탭을 닫거나 로그아웃하면 즉시 삭제)</li>
+</ul>
+<p>해당 정보는 서비스 운영자나 외부 서버로 전송·수집·저장되지 않습니다.</p>
+<h2>3. Google Drive API 접근 및 데이터 보호 준수</h2>
+<p>본 서비스는 Google Identity Services를 통해 사용자가 명시적으로 허락한 경우에만 Google Drive API의 <code>drive.file</code> 범위를 사용합니다.</p>
+<ul>
+<li>본 서비스를 통해 생성하거나 업로드한 파일과 폴더에 한해서만 열람, 생성, 수정, 휴지통 이동 권한을 가집니다.</li>
+<li>사용자의 다른 Google Drive 파일이나 폴더는 일절 접근하거나 열람할 수 없습니다.</li>
+<li>본 서비스는 Limited Use 요건을 포함한 Google API Services User Data Policy를 엄격히 준수합니다. Google API를 통해 얻은 정보를 핵심 기능 제공 외 용도로 사용하지 않으며, 판매·광고에 활용하거나 사람이 열람하지 않습니다.</li>
+</ul>
+<h2>4. 파일 업로드 및 공유 방식</h2>
+<ul>
+<li>모든 파일은 사용자의 브라우저에서 사용자 본인의 Google Drive로 직접 업로드됩니다. 파일 데이터는 Atelier 4·2 서버를 거치지 않습니다.</li>
+<li>공유 링크 생성 및 이메일 공유는 사용자가 화면에서 직접 클릭할 때만 실행되며, 안내 메일은 Google 시스템에서 수신자에게 직접 발송됩니다.</li>
+</ul>
+<h2>5. 브라우저 로컬 저장소(localStorage) 사용</h2>
+<p>서비스 설정 유지를 위해 브라우저의 <code>localStorage</code>에는 다음 정보만 보관합니다.</p>
+<ul>
+<li>마지막으로 선택한 저장소 종류 및 프로젝트 이름</li>
+<li>파일 이어 올리기(Resumable upload)용 임시 업로드 주소</li>
+</ul>
+<p>인증 토큰이나 개인 식별 정보는 <code>localStorage</code>에 저장하지 않습니다.</p>
+<h2>6. 외부 스크립트</h2>
+<p>서비스 기능 제공을 위해 다음 외부 자원을 불러옵니다.</p>
+<ul>
+<li><strong>Google Identity Services</strong>: Google 로그인 및 드라이브 접근 인증</li>
+<li><strong>jsDelivr CDN</strong>: 글꼴 및 QR 코드 생성 라이브러리</li>
+</ul>
+<p>외부 자원을 로드하는 과정에서 사용자의 파일 내용이나 개인정보가 전달되지 않습니다.</p>
+<h2>7. 권한 철회 및 로그아웃</h2>
+<ul>
+<li>서비스 내 &#x27;로그아웃&#x27; 버튼을 누르면 보관 중인 접근 토큰이 즉시 폐기됩니다.</li>
+<li>Google 계정 설정(보안 &gt; 타사 앱 액세스)에서 언제든지 Atelier 4·2 Share의 권한을 직접 해제할 수 있습니다.</li>
+<li>생성된 파일은 사용자 본인의 Google Drive에 그대로 남으며, 사용자가 언제든 직접 삭제할 수 있습니다.</li>
+</ul>
+<h2>8. 문의처</h2>
+<p>본 방침 또는 서비스 이용에 관한 문의는 GitHub 저장소 <strong>Atelier-4-2/share</strong>의 Issues 게시판에 남겨 주시기 바랍니다.</p>
+</section>
+<hr>
+<section id="fr" lang="fr">
+<h1>Politique de confidentialité d’Atelier 4·2 Share</h1>
+<p>Date d&#x27;entrée en vigueur : 23 novembre 2026</p>
+<h2>1. Présentation et hébergement</h2>
+<p>Atelier 4·2 Share (ci-après le « Service ») est une application web de partage de fichiers (<a href="https://atelier-4-2.github.io/share/">https://atelier-4-2.github.io/share/</a>) intégrée à Atelier 4·2, ensemble d’outils gratuits développés par un étudiant indépendant. Le Service fonctionne comme un site statique hébergé sur GitHub Pages, sans serveur backend ni base de données dédiée. Il n&#x27;emploie aucune publicité, aucun outil d&#x27;analyse d&#x27;audience et aucun traceur ou cookie de suivi.</p>
+<h2>2. Données traitées et conservation</h2>
+<p>Lors de l&#x27;utilisation du Service, seules les informations suivantes sont traitées temporairement au sein du navigateur de l&#x27;utilisateur :</p>
+<ul>
+<li><strong>Informations du compte Google</strong> : nom du compte, adresse e-mail et espace de stockage disponible sur Google Drive (exclusivement pour l&#x27;affichage à l&#x27;écran).</li>
+<li><strong>Jeton d&#x27;accès</strong> : jeton OAuth 2.0 (conservé uniquement dans le <code>sessionStorage</code> de l&#x27;onglet actif et supprimé dès la fermeture de l&#x27;onglet ou la déconnexion).</li>
+</ul>
+<p>Ces données ne sont jamais transmises, recueillies ni enregistrées sur un serveur d&#x27;Atelier 4·2.</p>
+<h2>3. Accès à l&#x27;API Google Drive et conformité Google</h2>
+<p>Sous réserve de l&#x27;autorisation expresse de l&#x27;utilisateur via Google Identity Services, le Service utilise exclusivement le périmètre (scope) <code>drive.file</code> de l&#x27;API Google Drive :</p>
+<ul>
+<li>L&#x27;accès est strictement limité à la consultation, la création, la modification et la mise à la corbeille des fichiers et dossiers créés par cette application.</li>
+<li>Le Service ne peut accéder à aucun autre fichier ou dossier présent sur le Google Drive de l&#x27;utilisateur.</li>
+<li>Le Service respecte la politique relative aux données utilisateur des services d&#x27;API Google (Google API Services User Data Policy), y compris les exigences d&#x27;utilisation limitée (Limited Use). Les données issues des API Google ne sont ni vendues, ni utilisées à des fins publicitaires, ni consultées par des personnes humaines, et servent uniquement au fonctionnement du Service.</li>
+</ul>
+<h2>4. Téléversement et partage de fichiers</h2>
+<ul>
+<li>Les fichiers sont téléversés directement depuis le navigateur vers le propre compte Google Drive de l&#x27;utilisateur, sans transiter par les serveurs d&#x27;Atelier 4·2.</li>
+<li>La création de liens de partage et le partage par e-mail s&#x27;effectuent uniquement sur action explicite de l&#x27;utilisateur. Les notifications par e-mail sont envoyées directement par Google aux destinataires.</li>
+</ul>
+<h2>5. Stockage local dans le navigateur (localStorage)</h2>
+<p>Pour préserver la configuration de session, le Service enregistre uniquement dans le <code>localStorage</code> du navigateur :</p>
+<ul>
+<li>Le dernier type de stockage utilisé et le nom du projet ;</li>
+<li>L&#x27;adresse temporaire de reprise de téléversement (Resumable upload URI).</li>
+</ul>
+<p>Aucun jeton d&#x27;authentification ni donnée d&#x27;identification personnelle n&#x27;y est conservé.</p>
+<h2>6. Scripts externes</h2>
+<p>Le Service charge les ressources externes suivantes :</p>
+<ul>
+<li><strong>Google Identity Services</strong> : authentification et accès à Google Drive ;</li>
+<li><strong>jsDelivr CDN</strong> : polices d&#x27;écriture et bibliothèque de génération de codes QR.</li>
+</ul>
+<p>Le contenu des fichiers et les données personnelles ne sont en aucun cas transmis à ces tiers.</p>
+<h2>7. Révocation des accès et déconnexion</h2>
+<ul>
+<li>L&#x27;utilisateur peut cliquer sur « Déconnexion » dans l&#x27;application pour détruire immédiatement le jeton d&#x27;accès stocké.</li>
+<li>L&#x27;accès peut être révoqué à tout moment depuis les paramètres du compte Google (Sécurité &gt; Applications tierces ayant accès au compte).</li>
+<li>Les fichiers créés restent stockés sur le Google Drive de l&#x27;utilisateur, qui peut les supprimer librement à tout moment.</li>
+</ul>
+<h2>8. Contact</h2>
+<p>Pour toute question relative à cette politique de confidentialité ou au Service, veuillez ouvrir un ticket dans l&#x27;onglet Issues du dépôt GitHub <strong>Atelier-4-2/share</strong>.</p>
+</section>
+</main>
+</body>
+</html>
