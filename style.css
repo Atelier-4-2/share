@@ -65,13 +65,18 @@ a { color: inherit; }
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
 }
 .brand {
+  flex: none;
   display: inline-flex; align-items: center; min-height: 44px; padding: 12px 10px 12px 0;
   font-family: "Instrument Sans", sans-serif; font-weight: 600; font-size: 20px;
   letter-spacing: .02em; line-height: 1; text-decoration: none;
 }
 .nav-right { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .site-switch, .lang { display: inline-flex; gap: 2px; padding: 3px; border-radius: 980px; background: var(--surface); }
+.site-switch { min-width: 0; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.site-switch::-webkit-scrollbar { display: none; }
+.lang { flex: none; }
 .site-switch a, .lang button {
+  flex: none; white-space: nowrap;
   padding: 6px 12px; border-radius: 980px; font-size: 13px; font-weight: 600; line-height: 1.4;
   color: var(--muted); text-decoration: none; border: 0; background: none; font-family: inherit; cursor: pointer;
 }
