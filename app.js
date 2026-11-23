@@ -37,6 +37,8 @@ void MOCK_SESSION_KEY;
 const ROOT_NAME = cfg.ROOT_FOLDER_NAME || 'Atelier 4·2 Share';
 const state = { adapter: null, user: null, quota: null, rootId: null, projects: [], project: null, tree: [], perms: [], tasks: [], folderCache: new Map(), linkScope: null, provider: null };
 const queue = new UploadQueue(2);
+const armed = new Map(); // file id -> expiry (ms); lives in app state so re-renders (20 s watch, uploads) cannot drop it
+const isArmed = (id) => (armed.get(id) || 0) > Date.now();
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } },
@@ -48,7 +50,16 @@ function toast(msg) {
   const el = $('#toast'); el.textContent = msg; el.classList.add('show');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 3600);
 }
-const errMsg = (e) => (e && (e.message || e.status)) || 'error';
+const errMsg = (e) => (e && e.code === 'api-disabled' ? t('apiDisabled') : e && e.code === 'access-denied' ? t('testUser') : (e && (e.message || e.status)) || 'error');
+/** Sign-in failures: say what is actually wrong instead of always blaming the popup. */
+function signInMessage(e, provider) {
+  if (e.code === 'admin-consent') return t('adminConsent');
+  if (e.code === 'api-disabled') return t('apiDisabled');
+  if (e.code === 'access-denied') return t('testUser');
+  if (e.code === 'network') return provider === 'google' ? t('gsiFail') : t('msalFail');
+  if (e.code === 'auth-required' && /popup|closed|blocked/i.test(e.message || '')) return t('signInFail');
+  return t('signInFailGeneric', { msg: (e && (e.message || e.status)) || 'error' });
+}
 const fmtDate = (s) => { try { return new Date(s).toLocaleDateString(lang === 'fr' ? 'fr-FR' : 'ko-KR', { year: 'numeric', month: 'short', day: 'numeric' }); } catch (e) { return ''; } };
 const pname = () => (state.adapter ? state.adapter.label : '');
 
@@ -89,9 +100,9 @@ function renderChooser() {
     if (!ok) anyMissing = true;
     b.disabled = !ok;
     b.setAttribute('aria-pressed', String(last === p));
-    $('[data-state]', b).textContent = !ok ? t('needSetup') : last === p ? t('lastUsed') : '';
+    $('[data-state]', b).textContent = !ok ? t(LOCAL ? 'needSetup' : 'comingSoon') : last === p ? t('lastUsed') : '';
   }
-  $('#setupNote').hidden = !anyMissing || MOCK;
+  $('#setupNote').hidden = !(LOCAL && anyMissing) || MOCK; // developer hint: never on the published site
 }
 
 let cloud = null, watcher = null;
@@ -148,8 +159,7 @@ async function chooseProvider(provider) {
     store.set(PROVIDER_KEY, provider);
     await enterApp(await cloud.signIn(provider));
   } catch (e) {
-    const net = e.code === 'network' ? (provider === 'google' ? t('gsiFail') : t('msalFail')) : null;
-    errEl.textContent = e.code === 'admin-consent' ? t('adminConsent') : net || (t('signInFail') + ' (' + errMsg(e) + ')');
+    errEl.textContent = signInMessage(e, provider);
     errEl.hidden = false; state.adapter = null; state.user = null; show('signin');
   } finally { renderChooser(); }
 }
@@ -225,11 +235,15 @@ function renderProjects() {
   }
   $('#projectsEmpty').hidden = state.projects.length > 0;
 }
+let creating = false;
+$('#projectName').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); $('#newProjectForm').requestSubmit(); } });
 $('#newProjectForm').addEventListener('submit', async (ev) => {
   ev.preventDefault();
+  if (creating) return;
   const err = $('#projectError'); err.hidden = true;
   const name = safeName($('#projectName').value);
   if (!name) return;
+  creating = true;
   try {
     const p = await cloud.createProject(name);
     $('#projectName').value = '';
@@ -238,7 +252,7 @@ $('#newProjectForm').addEventListener('submit', async (ev) => {
     openProject(p);
   } catch (e) {
     err.textContent = e.code === 'exists' ? t('projectExists') : t('apiErr', { msg: errMsg(e) }); err.hidden = false;
-  }
+  } finally { creating = false; }
 });
 
 async function openProject(p) {
@@ -305,7 +319,7 @@ function nodeRow(n) {
   const meta = h('span', { class: 'n-meta' }, n.isFolder ? '' : formatBytes(n.size) + ' · ' + fmtDate(n.createdTime));
   const acts = h('span', { class: 'acts' });
   const renameBtn = h('button', { type: 'button', class: 'btn sm', onclick: () => startRename(row, n, nameEl) }, t('rename'));
-  const delBtn = h('button', { type: 'button', class: 'btn sm danger', onclick: () => confirmDelete(delBtn, n) }, t('del'));
+  const delBtn = h('button', { type: 'button', class: 'btn sm danger', onclick: () => confirmDelete(delBtn, n) }, isArmed(n.id) ? t('confirmDel') : t('del'));
   acts.append(renameBtn, delBtn);
   row.append(nameEl, meta, acts);
   return row;
@@ -323,13 +337,16 @@ function startRename(row, n, nameEl) {
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSave(); if (e.key === 'Escape') loadTree(); });
   nameEl.replaceChildren(input); row.querySelector('.acts').replaceChildren(save); input.focus(); input.select();
 }
+async function doDelete(n) {
+  armed.delete(n.id); state.ownAt = Date.now();
+  try { await state.adapter.trash(n.id); toast(t('deleted')); }
+  catch (e) { toast(t('apiErr', { msg: errMsg(e) })); }
+  await loadTree();
+}
 function confirmDelete(btn, n) {
-  if (btn.dataset.armed) {
-    state.adapter.trash(n.id).then(() => { toast(t('deleted')); return loadTree(); }).catch(e => toast(t('apiErr', { msg: errMsg(e) })));
-    return;
-  }
-  btn.dataset.armed = '1'; btn.textContent = t('confirmDel');
-  setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = t('del'); } }, 3500);
+  if (isArmed(n.id)) return doDelete(n);
+  armed.set(n.id, Date.now() + 4000); btn.textContent = t('confirmDel');
+  setTimeout(() => { if (!isArmed(n.id) && btn.isConnected) btn.textContent = t('del'); }, 4050);
 }
 
 /* ---------------- file intake (drop / pick) ---------------- */
@@ -452,7 +469,7 @@ function renderUploads() {
     if (!li) {
       li = h('li', { class: 'up-item', 'data-id': task.id },
         h('div', { class: 'up-top' }, h('span', { class: 'up-name' }), h('span', { class: 'up-meta pct' })),
-        h('div', { class: 'bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100' }, h('i')),
+        h('div', { class: 'meter', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100' }, h('i')),
         h('div', { class: 'up-meta status' }),
         h('div', { class: 'up-actions' }));
       ul.append(li);
@@ -462,9 +479,9 @@ function renderUploads() {
     li.className = 'up-item ' + task.state;
     $('.up-name', li).textContent = task.label || task.relPath;
     $('.pct', li).textContent = formatBytes(task.sent) + ' / ' + formatBytes(task.size) + ' · ' + pct + '%';
-    $('.bar > i', li).style.width = pct + '%';
-    $('.bar', li).setAttribute('aria-valuenow', String(pct));
-    $('.bar', li).setAttribute('aria-label', task.label || task.relPath);
+    $('.meter > i', li).style.width = pct + '%';
+    $('.meter', li).setAttribute('aria-valuenow', String(pct));
+    $('.meter', li).setAttribute('aria-label', task.label || task.relPath);
     $('.status', li).textContent = statusText(task);
     const acts = $('.up-actions', li); acts.replaceChildren();
     if (['uploading', 'retrying', 'queued'].includes(task.state)) acts.append(h('button', { type: 'button', class: 'btn sm', 'data-act': 'pause', onclick: () => task.pause() }, t('pause')));

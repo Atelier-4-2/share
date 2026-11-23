@@ -37,7 +37,7 @@ export const GRAPH_ALIGN = 320 * 1024;
 export const ONEDRIVE_CHUNK = 32 * GRAPH_ALIGN;        // 10 MiB, multiple of 320 KiB
 const MAX_RETRIES = 6;
 
-/** code: conflict | exists | not-found | auth-expired | auth-required | admin-consent | network | http | bad-path */
+/** code: api-disabled | access-denied | conflict | exists | not-found | auth-expired | auth-required | admin-consent | network | http | bad-path */
 export class CloudError extends Error {
   constructor(code, message, status, body) {
     super(message || code); this.name = 'CloudError'; this.code = code; this.body = body;
@@ -206,7 +206,7 @@ function googleAuth(clientId, holder) {
     await ready();
     if (pending) return pending;
     pending = new Promise((resolve, reject) => {
-      client.callback = (r) => { pending = null; if (r.error) return reject(new CloudError(interactive ? 'auth-required' : 'auth-expired', r.error)); holder.set(r.access_token, Date.now() + (Number(r.expires_in) || 3600) * 1000); resolve(r.access_token); };
+      client.callback = (r) => { pending = null; if (r.error) return reject(r.error === 'access_denied' ? new CloudError('access-denied', r.error, 403) : new CloudError(interactive ? 'auth-required' : 'auth-expired', r.error)); holder.set(r.access_token, Date.now() + (Number(r.expires_in) || 3600) * 1000); resolve(r.access_token); };
       client.error_callback = (e) => { pending = null; reject(new CloudError(interactive ? 'auth-required' : 'auth-expired', (e && e.type) || 'popup')); };
       try { client.requestAccessToken({ prompt: interactive ? 'consent' : '' }); } catch (e) { pending = null; reject(e); }
     });
@@ -290,7 +290,9 @@ function googleAdapter({ fetchImpl, holder, auth, rootName }) {
   };
   const fail = async (res) => {
     let b = null; try { b = await res.json(); } catch (e) { /* empty */ }
-    const code = res.status === 404 ? 'not-found' : res.status === 409 || res.status === 412 ? 'conflict' : 'http';
+    const reasons = JSON.stringify((b && b.error) || '');
+    const disabled = res.status === 403 && (/accessNotConfigured|SERVICE_DISABLED/.test(reasons) || /has not been used in project|is disabled/i.test(reasons));
+    const code = disabled ? 'api-disabled' : res.status === 404 ? 'not-found' : res.status === 409 || res.status === 412 ? 'conflict' : 'http';
     if (code === 'conflict') return new ConflictError((b && b.error && b.error.message) || 'conflict');
     return new CloudError(code, (b && b.error && b.error.message) || ('HTTP ' + res.status), res.status, b);
   };

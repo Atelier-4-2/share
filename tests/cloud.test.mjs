@@ -617,3 +617,35 @@ test('index.html: CSP present, lists the pinned scripts; SRI constants pinned', 
   assert.match(html, /id="whereLbl"/);
   assert.match(html, /<p class="hint" hidden><a href="\?mock=1"/, 'mock link hidden until JS confirms localhost');
 });
+
+/* ===== owner's real-Drive test round ===== */
+for (const provider of ['google', 'onedrive']) {
+  test(`[${provider}] trash really reaches the API and the file disappears from the listing`, async () => {
+    const { cloud, server } = setup(provider);
+    await cloud.signIn(provider);
+    const p = await cloud.createProject('P');
+    const f = await p.uploadBlob('files/x.bin', new Blob([new Uint8Array(5)]));
+    server.log.length = 0;
+    await cloud.adapter.trash(f.id);
+    const req = server.log.find(l => /\/files\/|\/items\//.test(l.url) && l.method !== 'GET');
+    if (provider === 'google') { assert.equal(req.method, 'PATCH'); assert.deepEqual(req.body, { trashed: true }); }
+    else assert.equal(req.method, 'DELETE');
+    assert.deepEqual((await p.list('files')).map(n => n.name), []);
+  });
+}
+
+test('[google] 403 accessNotConfigured / SERVICE_DISABLED -> code api-disabled; other 403 stays http', async () => {
+  sessionStorage.clear();
+  const g = createMockServer();
+  let mode = null;
+  const fetchWrap = (u, i) => {
+    if (mode && /\/drive\/v3\/files/.test(String(u))) return Promise.resolve(new Response(JSON.stringify(mode), { status: 403, headers: { 'Content-Type': 'application/json' } }));
+    return g.handler(u, i);
+  };
+  const cloud = C.createCloud({ overrides: { google: { fetch: fetchWrap } }, queueStore: C.memoryQueueStore() });
+  await cloud.signIn('google');
+  mode = { error: { code: 403, message: 'Google Drive API has not been used in project 123 before or it is disabled.', errors: [{ reason: 'accessNotConfigured' }], details: [{ reason: 'SERVICE_DISABLED' }] } };
+  await assert.rejects(cloud.listProjects(), e => e.code === 'api-disabled' && e.status === 403);
+  mode = { error: { code: 403, message: 'The user does not have sufficient permissions', errors: [{ reason: 'forbidden' }] } };
+  await assert.rejects(cloud.listProjects(), e => e.code === 'http' && e.status === 403);
+});
