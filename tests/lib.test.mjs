@@ -97,3 +97,36 @@ test('graph permission mapping', () => {
   assert.deepEqual([u.type, u.role, u.emailAddress], ['user', 'writer', 'x@y.fr']);
   assert.equal(L.mapGraphPermission({ id: 'd', roles: ['owner'], grantedToV2: { user: { email: 'o@p.q', displayName: 'O' } } }).role, 'owner');
 });
+
+/* ---------- review round: names, hosts, urls ---------- */
+test('safeName strips OneDrive-reserved characters, control chars, trailing dots', () => {
+  assert.equal(L.safeName('render: v2?.mov'), 'render- v2-.mov');
+  assert.equal(L.safeName('a<b>c|d"e*f\\g/h'), 'a-b-c-d-e-f-g-h');
+  assert.equal(L.safeName('name.  '), 'name');
+  assert.equal(L.safeName('..'), '_');
+  assert.equal(L.safeName('...'), '_');
+  assert.equal(L.safeName('\u0001\u0002ok\u001f'), 'ok');
+  assert.equal(L.safeName(''), '');
+  assert.equal(L.safeName('x'.repeat(300)).length, 200);
+  assert.equal(L.safeName('Colombes_p10'), 'Colombes_p10', 'ordinary names are untouched');
+  assert.equal(L.safeName('프로젝트 A'), '프로젝트 A', 'non-ASCII untouched');
+});
+test('safePath cleans every segment and drops empty ones', () => {
+  assert.equal(L.safePath('plans:v1/sheet*2?.pdf'), 'plans-v1/sheet-2-.pdf');
+  assert.equal(L.safePath('/a//b/'), 'a/b');
+  assert.equal(L.safePath('a/../b'), 'a/_/b');
+});
+test('isLocalHost: mock only on a developer machine', () => {
+  for (const h of ['localhost', '127.0.0.1', '[::1]', 'app.localhost']) assert.equal(L.isLocalHost(h), true, h);
+  for (const h of ['atelier-4-2.github.io', 'evil-localhost.com', '127.0.0.1.evil.com', 'localhost.evil.com', '', undefined]) assert.equal(L.isLocalHost(h), false, String(h));
+});
+test('safeHttpsUrl only passes https', () => {
+  assert.equal(L.safeHttpsUrl('https://drive.google.com/drive/folders/x'), 'https://drive.google.com/drive/folders/x');
+  for (const u of ['javascript:alert(1)', 'http://a.b/c', 'data:text/html,x', '//a.b', 'a.b', '', null, undefined, 42]) assert.equal(L.safeHttpsUrl(u), '', String(u));
+});
+test('isAuthPopup needs opener AND msal window name AND auth hash', () => {
+  assert.equal(L.isAuthPopup({ opener: {}, hash: '#code=abc&state=1', name: 'msal.cid.1' }), true);
+  assert.equal(L.isAuthPopup({ opener: {}, hash: '#code=abc', name: '' }), false, 'ordinary tab opened with a hash');
+  assert.equal(L.isAuthPopup({ opener: null, hash: '#code=abc', name: 'msal.x' }), false);
+  assert.equal(L.isAuthPopup({ opener: {}, hash: '', name: 'msal.x' }), false);
+});

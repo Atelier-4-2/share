@@ -10,6 +10,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com/gsi/ https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.30.0/lib/msal-browser.min.js https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js; style-src 'self' https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/ https://accounts.google.com/gsi/style; font-src 'self' https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/; img-src 'self' data: blob:; connect-src 'self' https://www.googleapis.com https://accounts.google.com https://graph.microsoft.com https://login.microsoftonline.com https://*.sharepoint.com https://*.files.1drv.com https://api.onedrive.com; frame-src https://accounts.google.com https://login.microsoftonline.com; base-uri 'self'; object-src 'none'; form-action 'self'">
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
   <link rel="stylesheet" href="./style.css">
@@ -40,7 +41,7 @@
     <section class="card hero" id="screenSignin" hidden>
       <h1 data-i18n="heroTitle">무거운 프로젝트 자료, 메일 한 통으로</h1>
       <p data-i18n="heroBody">폴더째 끌어다 놓으면 내 클라우드에 올라가고, 받을 사람의 메일 주소를 적으면 Google 또는 Microsoft가 링크를 보냅니다.</p>
-      <h2 class="where" data-i18n="whereTitle">어디에 저장할까요?</h2>
+      <h2 class="where" id="whereLbl" data-i18n="whereTitle">어디에 저장할까요?</h2>
       <div class="providers" role="group" aria-labelledby="whereLbl">
         <button type="button" class="prov" id="provGoogle" data-provider="google">
           <span class="prov-name">Google Drive</span>
@@ -56,7 +57,7 @@
       <p class="hint" id="setupNote" data-i18n="setupBody" hidden>클라이언트 ID가 없는 쪽은 아직 쓸 수 없습니다. config.js에 GOOGLE_CLIENT_ID, MS_CLIENT_ID를 넣으면 켜집니다.</p>
       <p class="hint err" id="signInError" role="alert" hidden></p>
       <p class="privacy" data-i18n="privacy">파일은 본인 Google Drive 또는 OneDrive에 저장됩니다. Atelier 4·2 서버를 거치지 않습니다. 공유한 사람에게 Google 또는 Microsoft가 메일을 보냅니다.</p>
-      <p class="hint"><a href="?mock=1" id="tryMock" data-i18n="tryMock">모의 모드로 화면 미리 보기</a></p>
+      <p class="hint" hidden><a href="?mock=1" id="tryMock" data-i18n="tryMock">모의 모드로 화면 미리 보기</a></p>
     </section>
 
     <!-- app -->

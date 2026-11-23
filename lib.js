@@ -67,10 +67,34 @@ export function parseEmails(text) {
 /** Escape a value for a Drive `q` string literal. */
 export function escapeQuery(s) { return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
 
-/** Drive forbids "/" in nothing, but we keep names tidy. */
+/** Tidy a single file / folder / project name. Strips control characters and every character that
+    OneDrive (and Windows) reserve: \ / : * ? " < > |  -> "-". Trailing dots/spaces and "."/".." are not valid either.
+    The UI keeps showing the original name; only the stored name is cleaned. */
 export function safeName(s) {
-  const n = String(s || '').replace(/[\u0000-\u001f]/g, '').replace(/\//g, '-').trim();
-  return n.slice(0, 200);
+  let n = String(s || '').replace(/[\u0000-\u001f]/g, '').replace(/[\\/:*?"<>|]/g, '-').trim();
+  n = n.slice(0, 200).replace(/[. ]+$/, '');
+  if (n === '' && String(s || '').trim() !== '') n = '_';
+  if (/^\.+$/.test(n)) n = '_';
+  return n;
+}
+/** Clean every segment of a relative path ("a:b/c?.txt" -> "a-b/c-.txt"); empty segments are dropped. */
+export function safePath(p) {
+  return String(p || '').split('/').filter(x => x !== '').map(safeName).filter(Boolean).join('/');
+}
+
+/** ?mock=1 is honoured on a developer machine only. */
+export function isLocalHost(hostname) {
+  const h = String(hostname || '').toLowerCase();
+  return h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '::1' || h.endsWith('.localhost');
+}
+/** href safety: only absolute https URLs from the storage provider are used as links. '' otherwise. */
+export function safeHttpsUrl(u) {
+  if (typeof u !== 'string') return '';
+  try { const x = new URL(u.trim()); return x.protocol === 'https:' ? x.href : ''; } catch (e) { return ''; }
+}
+/** True only for the MSAL sign-in popup returning with its auth response (opener + hash + msal window name). */
+export function isAuthPopup({ opener, hash, name } = {}) {
+  return !!opener && /[#&](code|error)=/.test(String(hash || '')) && /^msal[._]/i.test(String(name || ''));
 }
 
 /**

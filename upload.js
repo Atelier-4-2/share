@@ -6,17 +6,23 @@ const sleep = (ms, signal) => new Promise((res) => {
   if (signal) signal.addEventListener('abort', () => { clearTimeout(t); res(); }, { once: true });
 });
 
-function store() {
+/** Resume URIs live in localStorage; when it is blocked (Safari private mode, policies) an in-memory map keeps
+    resume working for as long as this page lives. The memory copy is always written, so a failed or quota-full
+    localStorage never loses the session URI. */
+const mem = new Map();
+export function store() {
   return {
-    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
-    set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } },
-    del(k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } },
+    get(k) { let v = null; try { v = localStorage.getItem(k); } catch (e) { /* blocked */ } return v != null ? v : (mem.has(k) ? mem.get(k) : null); },
+    set(k, v) { mem.set(k, v); try { localStorage.setItem(k, v); } catch (e) { /* blocked: memory copy only */ } },
+    del(k) { mem.delete(k); try { localStorage.removeItem(k); } catch (e) { /* blocked */ } },
   };
 }
+const isAuthError = (e) => !!e && (e.code === 'auth-expired' || e.code === 'auth-required' || e.status === 401);
 
+const splitName = (relPath, fallback) => { const i = String(relPath || '').lastIndexOf('/'); return (i < 0 ? relPath : relPath.slice(i + 1)) || fallback; };
 let seq = 0;
 export class UploadTask {
-  /** opts: { drive, file, parentId, relPath, chunk, onUpdate, retryBase } */
+  /** opts: { drive, file, parentId, relPath (cleaned storage path), label (original name shown in the UI), overwrite, chunk, onUpdate, retryBase } */
   constructor(opts) {
     Object.assign(this, { retryBase: 800 }, opts);
     this.chunk = opts.chunk || (opts.drive && opts.drive.chunkSize) || CHUNK_SIZE;
@@ -33,6 +39,7 @@ export class UploadTask {
     this.ctrl = null;
     this.running = false;
     this.resumedFromStore = false;
+    this.needsAuth = false; // stopped because the sign-in expired: resumes after a re-login, no blind retries
   }
   get speed() { return speedFromSamples(this.samples); }
   get eta() { const s = this.speed; return s > 0 ? (this.size - this.sent) / s : Infinity; }
@@ -46,14 +53,17 @@ export class UploadTask {
   start() {
     if (this.running || ['done', 'canceled'].includes(this.state)) return;
     this.running = true; this.ctrl = new AbortController();
-    this._run().catch((e) => { this.error = e; this._set('error'); }).finally(() => { this.running = false; });
+    this.needsAuth = false;
+    this._run().catch((e) => { this.error = e; this.needsAuth = isAuthError(e); this._set('error'); }).finally(() => { this.running = false; });
   }
   pause() { if (this.state === 'uploading' || this.state === 'retrying' || this.state === 'queued') { this.ctrl && this.ctrl.abort(); this._set('paused'); } }
-  resume() { if (this.state === 'paused' || this.state === 'error') { this.error = null; this.attempt = 0; this.start(); } }
+  resume() { if (this.state === 'paused' || this.state === 'error') { this.error = null; this.needsAuth = false; this.attempt = 0; this.start(); } }
   cancel() { this.ctrl && this.ctrl.abort(); this.kv.del(this.key); this._set('canceled'); }
 
   async _openSession(signal) {
     let uri = this.kv.get(this.key);
+    // a stored URI is only sent a token if the provider would have handed out exactly such an address
+    if (uri && this.drive.isValidUploadUri && !this.drive.isValidUploadUri(uri)) { this.kv.del(this.key); uri = null; }
     if (uri) {
       try {
         const q = await this.drive.queryUpload(uri, this.size, signal);
@@ -62,11 +72,13 @@ export class UploadTask {
         return { uri, offset: q.next };
       } catch (e) {
         if (e && e.name === 'AbortError') throw e;
-        // 404/410 = session expired; anything else we also fall back to a fresh session
+        // sign-in expired or the network blinked: keep the session URI, the caller waits / retries and resumes it
+        if (isAuthError(e) || isRetryable(e && e.status)) throw e;
+        // 404/410/400 = session gone: fall back to a fresh session
         this.kv.del(this.key);
       }
     }
-    uri = await this.drive.startUpload({ name: this.file.name, parentId: this.parentId, size: this.size, mimeType: this.file.type });
+    uri = await this.drive.startUpload({ name: this.storeName || splitName(this.relPath, this.file.name), parentId: this.parentId, size: this.size, mimeType: this.file.type, overwrite: !!this.overwrite });
     this.kv.set(this.key, uri);
     return { uri, offset: 0 };
   }
@@ -89,7 +101,7 @@ export class UploadTask {
     this._progress(offset);
     this._set('uploading');
 
-    while (true) {
+    outer: while (true) {
       if (signal.aborted) return;
       const r = nextRange(offset, this.size, this.chunk);
       let res;
@@ -113,17 +125,12 @@ export class UploadTask {
             if (q.next !== r.start) { offset = q.next; this._progress(offset); }
           } catch (e2) { if (signal.aborted) return; }
           if (res) break;
-          if (offset !== r.start) return this._continueFrom(uri, offset);
+          if (offset !== r.start) continue outer; // server has a different offset: re-slice from there, same session
         }
       }
       if (res.done) { this.kv.del(this.key); this.result = res.file; this._progress(this.size); return this._set('done'); }
       offset = res.next; this._progress(offset);
     }
-  }
-  /** Server had a different offset than expected: restart the loop from there. */
-  async _continueFrom(uri, offset) {
-    // re-enter by storing offset and running the main loop again (session URI is still stored)
-    return this._run();
   }
 }
 

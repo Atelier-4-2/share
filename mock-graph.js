@@ -41,9 +41,9 @@ export function createMockGraph({ speedMs = 90 } = {}) {
     const path = decodeURIComponent(u.pathname);
 
     // ---- upload session URL (pre-authorised; Authorization header must NOT be sent) ----
-    if (u.host === 'upload.graph.example') {
+    if (u.host === 'mock-my.sharepoint.com') {
       if (headers.Authorization) return err(401, 'unauthenticated', 'upload url must not carry Authorization');
-      const s = sessions.get(u.pathname.slice(1));
+      const s = sessions.get(u.pathname.replace(/^\/upload\//, ''));
       if (!s) return err(404, 'itemNotFound', 'session expired');
       if (method === 'GET') return J({ nextExpectedRanges: (s.size != null && s.received >= s.size) ? [] : [s.received + '-'], expirationDateTime: iso() });
       if (method === 'PUT') {
@@ -106,7 +106,7 @@ export function createMockGraph({ speedMs = 90 } = {}) {
       if (!items.has(m[1])) return err(404, 'itemNotFound', 'parent');
       const key = 'mocksess' + (nextSess++);
       sessions.set(key, { name: m[2], parent: m[1], size: null, received: 0 });
-      return J({ uploadUrl: 'https://upload.graph.example/' + key, expirationDateTime: iso() });
+      return J({ uploadUrl: 'https://mock-my.sharepoint.com/upload/' + key, expirationDateTime: iso() });
     }
     m = /^\/me\/drive\/items\/([^/]+)\/children$/.exec(p);
     if (m) {
@@ -140,7 +140,7 @@ export function createMockGraph({ speedMs = 90 } = {}) {
         for (const r of parsed.recipients || []) {
           const perm = { id: 'op' + (nextPerm++), roles: parsed.roles || ['read'], invitation: { email: r.email, signInRequired: !!parsed.requireSignIn }, grantedToV2: { user: { displayName: r.email.split('@')[0], email: r.email } } };
           list.push(perm); out.push(perm);
-          hooks.invites.push({ to: r.email, sendInvitation: parsed.sendInvitation, message: parsed.message });
+          hooks.invites.push({ to: r.email, sendInvitation: parsed.sendInvitation, message: parsed.message, requireSignIn: parsed.requireSignIn });
         }
         return J({ value: out });
       }

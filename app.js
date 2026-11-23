@@ -1,7 +1,7 @@
 import {
-  parseEmails, folderPaths, splitPath, safeName, formatBytes, formatSpeed, formatEta, treeSize, treeCount,
+  parseEmails, folderPaths, splitPath, safeName, safePath, isLocalHost, safeHttpsUrl, isAuthPopup, formatBytes, formatSpeed, formatEta, treeSize, treeCount,
 } from './lib.js';
-import { createCloud, CloudError } from './atelier-cloud.js';
+import { createCloud, CloudError, MOCK_SESSION_KEY } from './atelier-cloud.js';
 import { UploadTask, UploadQueue } from './upload.js';
 import { DICT } from './i18n.js';
 
@@ -30,7 +30,10 @@ function h(tag, attrs, ...kids) {
 /* ---------------- state ---------------- */
 const cfg = window.ATELIER_SHARE_CONFIG || {};
 const qs = new URLSearchParams(location.search);
-const MOCK = qs.get('mock') === '1';
+// the in-memory fake storage exists for development only: ?mock=1 is ignored on any real host
+const LOCAL = isLocalHost(location.hostname);
+const MOCK = LOCAL && qs.get('mock') === '1';
+void MOCK_SESSION_KEY;
 const ROOT_NAME = cfg.ROOT_FOLDER_NAME || 'Atelier 4·2 Share';
 const state = { adapter: null, user: null, quota: null, rootId: null, projects: [], project: null, tree: [], perms: [], tasks: [], folderCache: new Map(), linkScope: null, provider: null };
 const queue = new UploadQueue(2);
@@ -59,10 +62,12 @@ function applyLang() {
   $('#langFr').setAttribute('aria-pressed', String(lang === 'fr'));
   $('#langKo').setAttribute('aria-pressed', String(lang === 'ko'));
   document.title = 'Share — Atelier 4·2';
-  if (MOCK) { const b = $('#mockBanner'); b.hidden = false; b.textContent = t('mockBanner'); $('#tryMock').parentElement.hidden = true; }
+  if (MOCK) { const b = $('#mockBanner'); b.hidden = false; b.textContent = t('mockBanner'); }
+  $('#tryMock').parentElement.hidden = !LOCAL || MOCK; // never shown on the published site
   renderChooser();
   if (state.user) { renderAccount(); renderProjects(); renderProviderTexts(); }
   if (state.project) { renderProjectHead(); renderUploads(); renderPerms(); renderTree(); }
+  if (lastQueue) renderQueue(lastQueue);
 }
 $$('.lang button').forEach(b => b.addEventListener('click', () => {
   lang = b.dataset.lang;
@@ -97,7 +102,7 @@ async function initCloud() {
     const { createMockServer } = await import('./mock-server.js');
     const { createMockGraph } = await import('./mock-graph.js');
     mockServers.google = createMockServer(); mockServers.onedrive = createMockGraph();
-    window.__mockServers = mockServers;
+    window.__mockServers = mockServers; // dev hooks, localhost only
     overrides.google = { fetch: (u, i) => mockServers.google.handler(u, i), refuseRefresh: () => !!window.__refuseRefresh };
     overrides.onedrive = {
       fetch: (u, i) => mockServers.onedrive.handler(u, i), refuseRefresh: () => !!window.__refuseRefresh,
@@ -105,13 +110,18 @@ async function initCloud() {
     };
   }
   cloud = createCloud({
-    googleClientId: cfg.GOOGLE_CLIENT_ID, msClientId: cfg.MS_CLIENT_ID, rootName: ROOT_NAME, overrides,
+    googleClientId: cfg.GOOGLE_CLIENT_ID, msClientId: cfg.MS_CLIENT_ID, rootName: ROOT_NAME, overrides, mock: MOCK,
     isOffline: MOCK ? () => !!window.__forceOffline || navigator.onLine === false : undefined,
     pollMs: MOCK && qs.get('poll') ? Number(qs.get('poll')) : undefined,
   });
-  window.__cloud = cloud;
+  if (MOCK) window.__cloud = cloud;
   cloud.on('auth-expired', () => { $('#reauthBar').hidden = false; });
-  cloud.on('auth-restored', () => { $('#reauthBar').hidden = true; toast(t('reauthed')); });
+  cloud.on('auth-restored', () => {
+    $('#reauthBar').hidden = true; toast(t('reauthed'));
+    // uploads that stopped for the expired sign-in carry on from their stored session
+    state.tasks.forEach(x => { if (x.state === 'error' && x.needsAuth) x.resume(); });
+    queue.pump();
+  });
   cloud.on('queue', renderQueue);
   cloud.on('queue', (s) => { if (s.pending === 0 && state.project) loadTree(); });
 }
@@ -160,14 +170,30 @@ function leaveStore() {
 $('#signOutBtn').addEventListener('click', leaveStore);
 $('#switchBtn').addEventListener('click', leaveStore);
 
+let lastQueue = null;
 function renderQueue(s) {
+  lastQueue = s;
   const bar = $('#queueBar');
-  if (!s || (!s.pending && !s.conflicts && !s.failed)) { bar.hidden = true; return; }
+  if (!s || (!s.pending && !s.conflicts && !s.failed)) { bar.hidden = true; bar.replaceChildren(); return; }
   const parts = [];
   if (s.pending) parts.push(t('queueBar', { n: s.pending }));
   if (s.conflicts) parts.push(t('queueConflict', { n: s.conflicts }));
   if (s.failed) parts.push(t('queueFailed', { n: s.failed }));
-  bar.textContent = parts.join(' '); bar.hidden = false;
+  const list = h('ul', { class: 'queue-items' });
+  const act = async (id, how) => {
+    try { await cloud.resolveQueued(id, how); } catch (e) { toast(t('apiErr', { msg: errMsg(e) })); }
+  };
+  for (const it of (s.items || []).filter(x => x.state === 'conflict' || x.state === 'failed')) {
+    const btns = h('span', { class: 'acts' });
+    if (it.state === 'conflict') btns.append(
+      h('button', { type: 'button', class: 'btn sm', 'data-q': 'overwrite', onclick: () => act(it.id, 'overwrite') }, t('qOverwrite')),
+      ...(it.kind === 'json' ? [h('button', { type: 'button', class: 'btn sm', 'data-q': 'keep-both', onclick: () => act(it.id, 'keep-both') }, t('qKeepBoth'))] : []));
+    else btns.append(h('button', { type: 'button', class: 'btn sm', 'data-q': 'retry', onclick: () => act(it.id, 'retry') }, t('retry')));
+    btns.append(h('button', { type: 'button', class: 'btn sm danger', 'data-q': 'discard', onclick: () => act(it.id, 'discard') }, t('qDiscard')));
+    list.append(h('li', { 'data-state': it.state }, h('span', { class: 'q-path' }, (it.projectName ? it.projectName + ' / ' : '') + it.path, ' · ', it.state === 'conflict' ? t('qStateConflict') : t('qStateFailed')), btns));
+  }
+  bar.replaceChildren(h('span', {}, parts.join(' ')), list.children.length ? list : '');
+  bar.hidden = false;
 }
 
 function renderAccount() {
@@ -242,7 +268,8 @@ $('#backBtn').addEventListener('click', () => {
 function projectUrl() { return state.project.openUrl(); }
 function renderProjectHead() {
   $('#projTitle').textContent = state.project.name;
-  $('#openDrive').href = projectUrl();
+  const u = safeHttpsUrl(projectUrl());
+  if (u) $('#openDrive').setAttribute('href', u); else $('#openDrive').removeAttribute('href');
 }
 
 /* ---------------- tree ---------------- */
@@ -273,7 +300,8 @@ function renderNodes(nodes) {
 }
 function nodeRow(n) {
   const row = h('div', { class: 'node ' + (n.isFolder ? 'folder' : 'file'), 'data-id': n.id });
-  const nameEl = h('span', { class: 'n-name' }, n.isFolder ? h('span', {}, n.name + '/') : h('a', { href: state.adapter.openUrl(n), target: '_blank', rel: 'noopener', title: t('openIn', { name: pname() }) }, n.name));
+  const href = n.isFolder ? '' : safeHttpsUrl(state.adapter.openUrl(n));
+  const nameEl = h('span', { class: 'n-name' }, n.isFolder ? h('span', {}, n.name + '/') : href ? h('a', { href, target: '_blank', rel: 'noopener', title: t('openIn', { name: pname() }) }, n.name) : h('span', {}, n.name));
   const meta = h('span', { class: 'n-meta' }, n.isFolder ? '' : formatBytes(n.size) + ' · ' + fmtDate(n.createdTime));
   const acts = h('span', { class: 'acts' });
   const renameBtn = h('button', { type: 'button', class: 'btn sm', onclick: () => startRename(row, n, nameEl) }, t('rename'));
@@ -371,12 +399,14 @@ async function addFiles(entries) {
   if (cloud.offline) {
     // no network: keep the files in IndexedDB; the cloud layer sends them when the connection is back
     let n = 0;
-    for (const e of entries) { if (e.dir) continue; await project.saveBlob('files/' + e.path, e.file); n++; }
+    for (const e of entries) { if (e.dir) continue; const sp = safePath(e.path); if (!sp) continue; await project.saveBlob('files/' + sp, e.file); n++; }
     toast(t('queuedOffline', { n })); renderQueue(await cloud.queueStatus());
     return;
   }
   toast(t('preparing'));
   try {
+    // stored names are cleaned (OneDrive rejects : * ? " < > | and trailing dots); the list keeps showing the original path
+    entries = entries.map(e => ({ ...e, orig: e.path, path: e.dir ? safePath(e.path) + '/' : safePath(e.path) })).filter(e => e.path && e.path !== '/');
     const dirs = folderPaths(entries.map(e => ({ path: e.dir ? e.path + 'x' : e.path })));
     for (const d of dirs) await ensurePath(d);
     let n = 0;
@@ -384,7 +414,7 @@ async function addFiles(entries) {
       if (e.dir) continue;
       const { dir } = splitPath(e.path);
       const parentId = await ensurePath(dir);
-      const task = new UploadTask({ drive: state.adapter, file: e.file, parentId, relPath: e.path, onUpdate: onTaskUpdate });
+      const task = new UploadTask({ drive: state.adapter, file: e.file, parentId, relPath: e.path, label: e.orig, onUpdate: onTaskUpdate });
       state.tasks.push(task); queue.add(task); n++;
     }
     if (state.project === project) { renderUploads(); toast(t('added', { n })); }
@@ -409,7 +439,7 @@ function statusText(task) {
     case 'retrying': return t('sRetrying', { n: task.attempt, max: 6 });
     case 'paused': return t('sPaused');
     case 'done': return t('sDone');
-    case 'error': return t('sError') + (task.error ? ' (' + errMsg(task.error) + ')' : '');
+    case 'error': return task.needsAuth ? t('sNeedAuth') : t('sError') + (task.error ? ' (' + errMsg(task.error) + ')' : '');
     case 'canceled': return t('sCanceled');
     default: return '';
   }
@@ -430,16 +460,17 @@ function renderUploads() {
     live.delete(String(task.id));
     const pct = task.size ? Math.min(100, Math.floor(task.sent / task.size * 100)) : (task.state === 'done' ? 100 : 0);
     li.className = 'up-item ' + task.state;
-    $('.up-name', li).textContent = task.relPath;
+    $('.up-name', li).textContent = task.label || task.relPath;
     $('.pct', li).textContent = formatBytes(task.sent) + ' / ' + formatBytes(task.size) + ' · ' + pct + '%';
     $('.bar > i', li).style.width = pct + '%';
     $('.bar', li).setAttribute('aria-valuenow', String(pct));
-    $('.bar', li).setAttribute('aria-label', task.relPath);
+    $('.bar', li).setAttribute('aria-label', task.label || task.relPath);
     $('.status', li).textContent = statusText(task);
     const acts = $('.up-actions', li); acts.replaceChildren();
     if (['uploading', 'retrying', 'queued'].includes(task.state)) acts.append(h('button', { type: 'button', class: 'btn sm', 'data-act': 'pause', onclick: () => task.pause() }, t('pause')));
     if (task.state === 'paused') acts.append(h('button', { type: 'button', class: 'btn sm', 'data-act': 'resume', onclick: () => { task.resume(); queue.pump(); } }, t('resume')));
-    if (task.state === 'error') acts.append(h('button', { type: 'button', class: 'btn sm', 'data-act': 'retry', onclick: () => task.resume() }, t('retry')));
+    if (task.state === 'error' && task.needsAuth) acts.append(h('button', { type: 'button', class: 'btn sm primary', 'data-act': 'reauth', onclick: async () => { try { await cloud.reauth(); } catch (e) { toast(t('apiErr', { msg: errMsg(e) })); } } }, t('reauthBtn')));
+    else if (task.state === 'error') acts.append(h('button', { type: 'button', class: 'btn sm', 'data-act': 'retry', onclick: () => task.resume() }, t('retry')));
     if (!['done', 'canceled'].includes(task.state)) acts.append(h('button', { type: 'button', class: 'btn sm', 'data-act': 'cancel', onclick: () => task.cancel() }, t('cancel')));
   }
   for (const li of live.values()) li.remove();
@@ -457,9 +488,10 @@ function renderPerms() {
   $('#linkBox').hidden = !link; $('#linkOff').hidden = !!link;
   $('#orgNote').hidden = !(link && link.type === 'organization');
   if (link) {
-    const url = link.url || '';
+    const url = safeHttpsUrl(link.url);   // only https links from the provider are shown, copied, mailed or turned into a QR
     $('#linkInput').value = url;
-    $('#mailtoLink').href = 'mailto:?subject=' + encodeURIComponent(t('mailSubject', { name: state.project.name })) + '&body=' + encodeURIComponent(t('mailBody', { name: state.project.name, url }));
+    if (url) $('#mailtoLink').setAttribute('href', 'mailto:?subject=' + encodeURIComponent(t('mailSubject', { name: state.project.name })) + '&body=' + encodeURIComponent(t('mailBody', { name: state.project.name, url })));
+    else $('#mailtoLink').removeAttribute('href');
     drawQr(url);
   }
   for (const p of state.perms) {
@@ -518,6 +550,7 @@ async function drawQr(text) {
       await new Promise((res, rej) => {
         const s = document.createElement('script');
         s.src = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';
+        s.integrity = 'sha384-8FWZA6BGMXhsfO+BLtrJK0We6gg5o1JyO8xQm6peWDEUs17ACA5ziE/NIAkl9z2k'; s.crossOrigin = 'anonymous'; // pinned file; CSP allows exactly this URL
         s.onload = res; s.onerror = rej; document.head.appendChild(s);
       });
       qrLib = window.qrcode;
@@ -535,7 +568,7 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 // MSAL popup return: the popup loads this page with the auth response in the hash; let MSAL consume it.
-const inAuthPopup = !!window.opener && /[#&](code|error)=/.test(location.hash);
+const inAuthPopup = isAuthPopup({ opener: window.opener, hash: location.hash, name: window.name });
 if (!inAuthPopup) {
   applyLang(); show('signin');
   (async () => {

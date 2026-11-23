@@ -234,3 +234,9 @@ details.sub > summary::before { content: "+"; color: var(--muted); font-weight: 
 details.sub[open] > summary::before { content: "−"; }
 #linkBox .qr { margin-top: 4px; }
 .btn[href] { text-decoration: none; }
+
+/* offline queue: items that need a decision */
+.queue-items { list-style: none; margin: 0; padding: 0; flex-basis: 100%; display: grid; gap: 8px; }
+.queue-items li { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding-top: 8px; border-top: 1px solid var(--line); }
+.queue-items .q-path { overflow-wrap: anywhere; min-width: 0; }
+.queue-items .acts { display: flex; gap: 6px; flex-wrap: wrap; }

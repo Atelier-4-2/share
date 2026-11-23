@@ -71,6 +71,13 @@ export function createMockServer({ speedMs = 90 } = {}) {
       return J(pub(f));
     }
     m = /^\/upload\/drive\/v3\/files\/([^/]+)$/.exec(path);
+    if (m && method === 'PATCH' && q.get('uploadType') === 'resumable') { // overwrite an existing file's content via a resumable session
+      const f = files.get(m[1]); if (!f) return err(404, 'File not found');
+      const size = Number(headers['X-Upload-Content-Length']);
+      const uri = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=mocksess' + (nextSess++);
+      sessions.set(uri, { meta: { name: f.name, mimeType: f.mimeType, parents: f.parents }, size, received: 0, replaceId: f.id });
+      return new Response(null, { status: 200, headers: { Location: uri } });
+    }
     if (m && method === 'PATCH') {
       const f = files.get(m[1]); if (!f) return err(404, 'File not found');
       f.content = bodyText; f.size = bodyText.length; f.rev++; f.modifiedTime = iso(); touch(f.id);
@@ -100,7 +107,7 @@ export function createMockServer({ speedMs = 90 } = {}) {
       });
       s.received = end;
       if (s.received >= s.size) {
-        const f = mk(s.meta.name, s.meta.mimeType, s.meta.parents || ['root'], { size: s.size });
+        const f = s.replaceId ? replaceContent(s.replaceId, s.size) : mk(s.meta.name, s.meta.mimeType, s.meta.parents || ['root'], { size: s.size });
         sessions.delete(key);
         return J(pub(f), 200);
       }
@@ -164,6 +171,7 @@ export function createMockServer({ speedMs = 90 } = {}) {
     return err(404, 'mock: no route ' + method + ' ' + path);
   }
 
+  function replaceContent(id, size) { const f = files.get(id); f.size = size; f.content = undefined; f.rev++; f.modifiedTime = iso(); touch(id); return f; }
   function trashChildren(id) { for (const f of files.values()) if (f.parents.includes(id)) { f.trashed = true; trashChildren(f.id); } }
   function totalBytes() { let n = 0; for (const f of files.values()) if (!f.trashed && f.size) n += Number(f.size); return n; }
   function safeParse(s) { try { return JSON.parse(s); } catch (e) { return s; } }
